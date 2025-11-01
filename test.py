@@ -48,7 +48,7 @@ def main(args):
     if not os.path.exists(args.pc_path):
         raise FileNotFoundError 
     pc = read_points(args.pc_path)
-    pc = point_range_filter(pc)
+    #pc = point_range_filter(pc)
     pc_torch = torch.from_numpy(pc)
     if os.path.exists(args.calib_path):
         calib_info = read_calib(args.calib_path)

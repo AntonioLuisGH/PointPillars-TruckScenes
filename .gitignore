@@ -7,3 +7,35 @@ tmp/
 results/
 *.sh
 .idea
+
+# Virtual environment
+venv/
+.env/
+.env*/
+
+# IDE / editor files
+.vscode/
+.idea/
+
+# Compiled Python files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# Dataset or model binaries (if you want to ignore large pretrained models)
+pretrained/model.onnx
+pretrained/model.trt
+viewpoint.json
+
+# Optional: ignore Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+

@@ -37,7 +37,8 @@ def create_data_info_pkl(data_root, data_type, prefix, label=True, db=False):
     print(f"Processing {data_type} data..")
     ids_file = os.path.join(CUR, 'pointpillars', 'dataset', 'ImageSets', f'{data_type}.txt')
     with open(ids_file, 'r') as f:
-        ids = [id.strip() for id in f.readlines()]
+        ids = [id.strip() for id in f.readlines()][:200]  # only first 400 samples
+
     
     split = 'training' if label else 'testing'
 
@@ -46,80 +47,98 @@ def create_data_info_pkl(data_root, data_type, prefix, label=True, db=False):
         kitti_dbinfos_train = {}
         db_points_saved_path = os.path.join(data_root, f'{prefix}_gt_database')
         os.makedirs(db_points_saved_path, exist_ok=True)
-    for id in tqdm(ids):
-        cur_info_dict={}
-        img_path = os.path.join(data_root, split, 'image_2', f'{id}.png')
-        lidar_path = os.path.join(data_root, split, 'velodyne', f'{id}.bin')
-        calib_path = os.path.join(data_root, split, 'calib', f'{id}.txt') 
-        cur_info_dict['velodyne_path'] = sep.join(lidar_path.split(sep)[-3:])
-
-        img = cv2.imread(img_path)
-        image_shape = img.shape[:2]
-        cur_info_dict['image'] = {
-            'image_shape': image_shape,
-            'image_path': sep.join(img_path.split(sep)[-3:]), 
-            'image_idx': int(id),
-        }
-
-        calib_dict = read_calib(calib_path)
-        cur_info_dict['calib'] = calib_dict
-
-        lidar_points = read_points(lidar_path)
-        reduced_lidar_points = remove_outside_points(
-            points=lidar_points, 
-            r0_rect=calib_dict['R0_rect'], 
-            tr_velo_to_cam=calib_dict['Tr_velo_to_cam'], 
-            P2=calib_dict['P2'], 
-            image_shape=image_shape)
-        saved_reduced_path = os.path.join(data_root, split, 'velodyne_reduced')
-        os.makedirs(saved_reduced_path, exist_ok=True)
-        saved_reduced_points_name = os.path.join(saved_reduced_path, f'{id}.bin')
-        write_points(reduced_lidar_points, saved_reduced_points_name)
-
-        if label:
-            label_path = os.path.join(data_root, split, 'label_2', f'{id}.txt')
-            annotation_dict = read_label(label_path)
-            annotation_dict['difficulty'] = judge_difficulty(annotation_dict)
-            annotation_dict['num_points_in_gt'] = get_points_num_in_bbox(
-                points=reduced_lidar_points,
-                r0_rect=calib_dict['R0_rect'], 
-                tr_velo_to_cam=calib_dict['Tr_velo_to_cam'],
-                dimensions=annotation_dict['dimensions'],
-                location=annotation_dict['location'],
-                rotation_y=annotation_dict['rotation_y'],
-                name=annotation_dict['name'])
-            cur_info_dict['annos'] = annotation_dict
-
-            if db:
-                indices, n_total_bbox, n_valid_bbox, bboxes_lidar, name = \
-                    points_in_bboxes_v2(
-                        points=lidar_points,
-                        r0_rect=calib_dict['R0_rect'].astype(np.float32), 
-                        tr_velo_to_cam=calib_dict['Tr_velo_to_cam'].astype(np.float32),
-                        dimensions=annotation_dict['dimensions'].astype(np.float32),
-                        location=annotation_dict['location'].astype(np.float32),
-                        rotation_y=annotation_dict['rotation_y'].astype(np.float32),
-                        name=annotation_dict['name']    
-                    )
-                for j in range(n_valid_bbox):
-                    db_points = lidar_points[indices[:, j]]
-                    db_points[:, :3] -= bboxes_lidar[j, :3]
-                    db_points_saved_name = os.path.join(db_points_saved_path, f'{int(id)}_{name[j]}_{j}.bin')
-                    write_points(db_points, db_points_saved_name)
-
-                    db_info={
-                        'name': name[j],
-                        'path': os.path.join(os.path.basename(db_points_saved_path), f'{int(id)}_{name[j]}_{j}.bin'),
-                        'box3d_lidar': bboxes_lidar[j],
-                        'difficulty': annotation_dict['difficulty'][j], 
-                        'num_points_in_gt': len(db_points), 
-                    }
-                    if name[j] not in kitti_dbinfos_train:
-                        kitti_dbinfos_train[name[j]] = [db_info]
-                    else:
-                        kitti_dbinfos_train[name[j]].append(db_info)
         
-        kitti_infos_dict[int(id)] = cur_info_dict
+    for id in tqdm(ids):
+        # --- START FIX: Wrap loop body in try...except to skip missing files ---
+        try:
+            cur_info_dict={}
+            img_path = os.path.join(data_root, split, 'image_2', f'{id}.png')
+            lidar_path = os.path.join(data_root, split, 'velodyne', f'{id}.bin')
+            calib_path = os.path.join(data_root, split, 'calib', f'{id}.txt') 
+            cur_info_dict['velodyne_path'] = sep.join(lidar_path.split(sep)[-3:])
+
+            img_path = os.path.join(data_root, split, 'image_2', f'{id}.png')
+            
+            # --- START FIX: Handle missing images ---
+            img = cv2.imread(img_path)
+            if img is None:
+                # Don't skip. Use a default shape.
+                image_shape = (375, 1242) # Default KITTI image shape
+            else:
+                image_shape = img.shape[:2]
+            # --- END FIX ---
+
+            cur_info_dict['image'] = {
+                'image_shape': image_shape,
+                'image_path': sep.join(img_path.split(sep)[-3:]),
+                'image_idx': int(id),
+            }
+
+            calib_dict = read_calib(calib_path)
+            cur_info_dict['calib'] = calib_dict
+
+            lidar_points = read_points(lidar_path)
+            reduced_lidar_points = remove_outside_points(
+                points=lidar_points, 
+                r0_rect=calib_dict['R0_rect'], 
+                tr_velo_to_cam=calib_dict['Tr_velo_to_cam'], 
+                P2=calib_dict['P2'], 
+                image_shape=image_shape)
+            saved_reduced_path = os.path.join(data_root, split, 'velodyne_reduced')
+            os.makedirs(saved_reduced_path, exist_ok=True)
+            saved_reduced_points_name = os.path.join(saved_reduced_path, f'{id}.bin')
+            write_points(reduced_lidar_points, saved_reduced_points_name)
+
+            if label:
+                label_path = os.path.join(data_root, split, 'label_2', f'{id}.txt')
+                annotation_dict = read_label(label_path)
+                annotation_dict['difficulty'] = judge_difficulty(annotation_dict)
+                annotation_dict['num_points_in_gt'] = get_points_num_in_bbox(
+                    points=reduced_lidar_points,
+                    r0_rect=calib_dict['R0_rect'], 
+                    tr_velo_to_cam=calib_dict['Tr_velo_to_cam'],
+                    dimensions=annotation_dict['dimensions'],
+                    location=annotation_dict['location'],
+                    rotation_y=annotation_dict['rotation_y'],
+                    name=annotation_dict['name'])
+                cur_info_dict['annos'] = annotation_dict
+
+                if db:
+                    indices, n_total_bbox, n_valid_bbox, bboxes_lidar, name = \
+                        points_in_bboxes_v2(
+                            points=lidar_points,
+                            r0_rect=calib_dict['R0_rect'].astype(np.float32), 
+                            tr_velo_to_cam=calib_dict['Tr_velo_to_cam'].astype(np.float32),
+                            dimensions=annotation_dict['dimensions'].astype(np.float32),
+                            location=annotation_dict['location'].astype(np.float32),
+                            rotation_y=annotation_dict['rotation_y'].astype(np.float32),
+                            name=annotation_dict['name']    
+                        )
+                    for j in range(n_valid_bbox):
+                        db_points = lidar_points[indices[:, j]]
+                        db_points[:, :3] -= bboxes_lidar[j, :3]
+                        db_points_saved_name = os.path.join(db_points_saved_path, f'{int(id)}_{name[j]}_{j}.bin')
+                        write_points(db_points, db_points_saved_name)
+
+                        db_info={
+                            'name': name[j],
+                            'path': os.path.join(os.path.basename(db_points_saved_path), f'{int(id)}_{name[j]}_{j}.bin'),
+                            'box3d_lidar': bboxes_lidar[j],
+                            'difficulty': annotation_dict['difficulty'][j], 
+                            'num_points_in_gt': len(db_points), 
+                        }
+                        if name[j] not in kitti_dbinfos_train:
+                            kitti_dbinfos_train[name[j]] = [db_info]
+                        else:
+                            kitti_dbinfos_train[name[j]].append(db_info)
+            
+            kitti_infos_dict[int(id)] = cur_info_dict
+
+        # --- This is the new exception handling block ---
+        except FileNotFoundError as e:
+            print(f"File not found for ID {id}: {e}, skipping this sample.")
+            continue
+        # --- END FIX ---
 
     saved_path = os.path.join(data_root, f'{prefix}_infos_{data_type}.pkl')
     write_pickle(kitti_infos_dict, saved_path)

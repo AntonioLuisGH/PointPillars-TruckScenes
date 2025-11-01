@@ -24,6 +24,8 @@ def bbox_camera2lidar(bboxes, tr_velo_to_cam, r0_rect):
     r0_rect: shape=(4, 4)
     return: shape=(N, 7)
     '''
+
+    bboxes = np.atleast_2d(bboxes)  # <-- FIX
     x_size, y_size, z_size = bboxes[:, 3:4], bboxes[:, 4:5], bboxes[:, 5:6]
     xyz_size = np.concatenate([z_size, x_size, y_size], axis=1)
     extended_xyz = np.pad(bboxes[:, :3], ((0, 0), (0, 1)), 'constant', constant_values=1.0)
@@ -40,14 +42,53 @@ def bbox_lidar2camera(bboxes, tr_velo_to_cam, r0_rect):
     r0_rect: shape=(4, 4)
     return: shape=(N, 7)
     '''
+    bboxes = np.atleast_2d(bboxes)
     x_size, y_size, z_size = bboxes[:, 3:4], bboxes[:, 4:5], bboxes[:, 5:6]
     xyz_size = np.concatenate([y_size, z_size, x_size], axis=1)
+    
+    # Pad lidar points to (N, 4) homogeneous coordinates
     extended_xyz = np.pad(bboxes[:, :3], ((0, 0), (0, 1)), 'constant', constant_values=1.0)
-    rt_mat = r0_rect @ tr_velo_to_cam
-    xyz = extended_xyz @ rt_mat.T
-    bboxes_camera = np.concatenate([xyz[:, :3], xyz_size, bboxes[:, 6:]], axis=1)
-    return bboxes_camera
 
+    # --- START ROBUST FIX ---
+    
+    # Brute-force r0_rect to (3, 3), then pad to (4, 4)
+    try:
+        # Flatten whatever array we get, take first 9 elements, reshape
+        r0_rect_3x3 = r0_rect.flatten()[:9].reshape(3, 3)
+    except Exception as e:
+        print(f"WARNING: Could not reshape R0_rect (shape: {r0_rect.shape}). Using identity matrix. Error: {e}")
+        r0_rect_3x3 = np.eye(3)
+        
+    r0_rect_mat = np.eye(4)
+    r0_rect_mat[:3, :3] = r0_rect_3x3
+
+    # Brute-force tr_velo_to_cam to (3, 4), then pad to (4, 4)
+    try:
+        # Flatten whatever array we get, take first 12 elements, reshape
+        tr_velo_3x4 = tr_velo_to_cam.flatten()[:12].reshape(3, 4)
+    except Exception as e:
+        print(f"WARNING: Could not reshape Tr_velo_to_cam (shape: {tr_velo_to_cam.shape}). Using identity matrix. Error: {e}")
+        # Create a (3, 4) "identity"
+        tr_velo_3x4 = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
+
+    tr_velo_mat = np.eye(4)
+    tr_velo_mat[:3, :4] = tr_velo_3x4
+
+    # --- END ROBUST FIX ---
+    
+    # Calculate the (4, 4) transform matrix
+    rt_mat = r0_rect_mat @ tr_velo_mat
+    
+    # Transform (N, 4) lidar points to (N, 4) camera points
+    # This is line 102 in the new file, not 81
+    xyz_homogeneous = extended_xyz @ rt_mat.T 
+    
+    # Get (x, y, z) from (x, y, z, w)
+    # Add 1e-8 to avoid division by zero if w is 0
+    xyz = xyz_homogeneous[:, :3] / (xyz_homogeneous[:, 3:4] + 1e-8)
+    
+    bboxes_camera = np.concatenate([xyz, xyz_size, bboxes[:, 6:]], axis=1)
+    return bboxes_camera
 
 def points_camera2image(points, P2):
     '''
