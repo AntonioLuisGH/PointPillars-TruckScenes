@@ -9,10 +9,10 @@ from pointpillars.utils import bbox3d2bevcorners, box_collision_test, read_point
 
 def dbsample(CLASSES, data_root, data_dict, db_sampler, sample_groups):
     '''
-    CLASSES: dict(Pedestrian=0, Cyclist=1, Car=2)
+    CLASSES: dict(Pedestrian=0, Cyclist=1, Drone=2)
     data_root: str, data root
     data_dict: dict(pts, gt_bboxes_3d, gt_labels, gt_names, difficulty)
-    db_infos: dict(Pedestrian, Cyclist, Car, ...)
+    db_infos: dict(Pedestrian, Cyclist, Drone, ...)
     return: data_dict
     '''
     pts, gt_bboxes_3d = data_dict['pts'], data_dict['gt_bboxes_3d']
@@ -308,7 +308,7 @@ def filter_bboxes_with_labels(data_dict, label=-1):
 
 def data_augment(CLASSES, data_root, data_dict, data_aug_config):
     '''
-    CLASSES: dict(Pedestrian=0, Cyclist=1, Car=2)
+    CLASSES: dict(Pedestrian=0, Cyclist=1, Drone=2)
     data_root: str, data root
     data_dict: dict(pts, gt_bboxes_3d, gt_labels, gt_names, difficulty)
     data_aug_config: dict()

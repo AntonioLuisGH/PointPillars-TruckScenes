@@ -140,7 +140,7 @@ def main(args):
     CLASSES = {
         'Pedestrian': 0, 
         'Cyclist': 1, 
-        'Car': 2
+        'Drone': 2
     }
     LABEL2CLASSES = {v:k for k, v in CLASSES.items()}
     pcd_limit_range = np.array([0, -40, -3, 70.4, 40, 0.0], dtype=np.float32)

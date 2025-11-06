@@ -661,12 +661,12 @@ def points_in_bboxes_v2(points, r0_rect, tr_velo_to_cam, dimensions, location, r
     return:
         indices: shape=(N, n_valid_bbox), indices[i, j] denotes whether point i is in bbox j. 
         n_total_bbox: int. 
-        n_valid_bbox: int, not including 'DontCare' 
+        n_valid_bbox: int, not including 'DontDronee' 
         bboxes_lidar: shape=(n_valid_bbox, 7) 
         name: shape=(n_valid_bbox, )
     '''
     n_total_bbox = len(dimensions)
-    n_valid_bbox = len([item for item in name if item != 'DontCare'])
+    n_valid_bbox = len([item for item in name if item != 'DontDronee'])
     location, dimensions = location[:n_valid_bbox], dimensions[:n_valid_bbox]
     rotation_y, name = rotation_y[:n_valid_bbox], name[:n_valid_bbox]
     bboxes_camera = np.concatenate([location, dimensions, rotation_y[:, None]], axis=1)

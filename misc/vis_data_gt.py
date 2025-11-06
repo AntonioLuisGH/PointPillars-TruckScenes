@@ -31,7 +31,7 @@ def vis_gt(root, id, saved_root):
     CLASSES = {
             'Pedestrian': 0, 
             'Cyclist': 1, 
-            'Car': 2
+            'Drone': 2
             }
 
 

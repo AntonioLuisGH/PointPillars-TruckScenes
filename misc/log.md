@@ -8,7 +8,7 @@
   - 输入: gt_bboxes_3d, pts, gt_labels
   - 输出: gt_bboxes_3d, pts, gt_labels
   - 逻辑: 
-    1. 从Car, Pedestrian, Cyclist的database数据集中随机采集一定数量的bbox及inside points, 使每类bboxes的数量分别达到15, 10, 10.
+    1. 从Drone, Pedestrian, Cyclist的database数据集中随机采集一定数量的bbox及inside points, 使每类bboxes的数量分别达到15, 10, 10.
     2. 将这些采样的bboxes进行碰撞检测, 满足碰撞检测的bboxes和对应labels加到gt_bboxes_3d, gt_labels
     3. 把位于这些采样bboxes内点删除掉, 替换成bboxes内部的点.
 - object 随机旋转平移

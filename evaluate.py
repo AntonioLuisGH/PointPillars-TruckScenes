@@ -81,7 +81,7 @@ def do_eval(det_results, gt_results, CLASSES, saved_path):
     MIN_IOUS = {
         'Pedestrian': [0.5, 0.5, 0.5],
         'Cyclist': [0.5, 0.5, 0.5],
-        'Car': [0.7, 0.7, 0.7]
+        'Drone': [0.7, 0.7, 0.7]
     }
     MIN_HEIGHT = [40, 25, 25]
 
@@ -111,7 +111,7 @@ def do_eval(det_results, gt_results, CLASSES, saved_path):
                             valid_class = 1
                         elif cls == 'Pedestrian' and cur_gt_name == 'Person_sitting':
                             valid_class = 0
-                        elif cls == 'Car' and cur_gt_name == 'Van':
+                        elif cls == 'Drone' and cur_gt_name == 'Van':
                             valid_class = 0
                         else:
                             valid_class = -1
@@ -123,7 +123,7 @@ def do_eval(det_results, gt_results, CLASSES, saved_path):
                         else:
                             gt_ignores.append(-1)
                         
-                        if cur_gt_name == 'DontCare':
+                        if cur_gt_name == 'DontDronee':
                             dc_bboxes.append(gt_result['bbox'][j])
                     total_gt_ignores.append(gt_ignores)
                     total_dc_bboxes.append(np.array(dc_bboxes))
@@ -209,7 +209,7 @@ def do_eval(det_results, gt_results, CLASSES, saved_path):
                             if det_ignores[k] == 0 and scores[k] >= score_threshold and not assigned[k]:
                                 fp += 1
                         
-                        # In case 2d bbox evaluation, we should consider dontcare bboxes
+                        # In case 2d bbox evaluation, we should consider dontDronee bboxes
                         if eval_type == 'bbox_2d':
                             dc_bboxes = total_dc_bboxes[i]
                             det_bboxes = det_results[id]['bbox']

@@ -38,7 +38,7 @@ class Kitti(Dataset):
     CLASSES = {
         'Pedestrian': 0, 
         'Cyclist': 1, 
-        'Car': 2
+        'Drone': 2
         }
 
     def __init__(self, data_root, split, pts_prefix='velodyne_reduced'):
@@ -57,7 +57,7 @@ class Kitti(Dataset):
         self.data_aug_config=dict(
             db_sampler=dict(
                 db_sampler=db_sampler,
-                sample_groups=dict(Car=15, Pedestrian=10, Cyclist=10)
+                sample_groups=dict(Drone=15, Pedestrian=10, Cyclist=10)
                 ),
             object_noise=dict(
                 num_try=100,
@@ -74,8 +74,8 @@ class Kitti(Dataset):
             object_range_filter=[0, -39.68, -3, 69.12, 39.68, 1]             
         )
 
-    def remove_dont_care(self, annos_info):
-        keep_ids = [i for i, name in enumerate(annos_info['name']) if name != 'DontCare']
+    def remove_dont_Dronee(self, annos_info):
+        keep_ids = [i for i, name in enumerate(annos_info['name']) if name != 'DontDronee']
         for k, v in annos_info.items():
             annos_info[k] = v[keep_ids]
         return annos_info
@@ -85,8 +85,8 @@ class Kitti(Dataset):
         for k, v in db_infos.items():
             db_infos[k] = [item for item in v if item['difficulty'] != -1]
 
-        # 2. filter_by_min_points, dict(Car=5, Pedestrian=10, Cyclist=10)
-        filter_thrs = dict(Car=5, Pedestrian=10, Cyclist=10)
+        # 2. filter_by_min_points, dict(Drone=5, Pedestrian=10, Cyclist=10)
+        filter_thrs = dict(Drone=5, Pedestrian=10, Cyclist=10)
         for cat in self.CLASSES:
             filter_thr = filter_thrs[cat]
             db_infos[cat] = [item for item in db_infos[cat] if item['num_points_in_gt'] >= filter_thr]
@@ -109,7 +109,7 @@ class Kitti(Dataset):
         r0_rect = calib_info['R0_rect'].astype(np.float32)
 
         # annotations input
-        annos_info = self.remove_dont_care(annos_info)
+        annos_info = self.remove_dont_Dronee(annos_info)
         annos_name = annos_info['name']
         annos_location = annos_info['location']
         annos_dimension = annos_info['dimensions']
