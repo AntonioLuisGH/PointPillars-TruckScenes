@@ -14,9 +14,7 @@ CLASS_COLORS = {
     'Car': [0, 1, 0],           # Green
     'Pedestrian': [1, 0, 0],    # Red
     'Cyclist': [0, 1, 1],       # Cyan
-    'Van': [1, 1, 0],           # Yellow
-    'Truck': [0.5, 0, 0.5],     # Purple
-    'Misc': [0.5, 0.5, 0.5],    # Gray
+    'Drone': [1, 1, 0],           # Yellow
     'DontCare': [1, 1, 1],      # White
 }
 
