@@ -4,12 +4,13 @@ import os
 import glob
 import argparse
 import time
-import traceback # --- NEW: For better error printing ---
+import traceback
+import sys  # --- NEW: For flushing console output ---
 
 # --- Get the absolute path of this script ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- NEW: Color map for bounding boxes ---
+# --- Color map for bounding boxes ---
 CLASS_COLORS = {
     'Car': [0, 1, 0],           # Green
     'Pedestrian': [1, 0, 0],    # Red
@@ -18,7 +19,7 @@ CLASS_COLORS = {
     'DontCare': [1, 1, 1],      # White
 }
 
-# --- NEW: Helper function to read calibration file ---
+# --- Helper function to read calibration file ---
 def read_calib_file(filepath):
     """
     Reads a KITTI calibration file and returns the
@@ -34,21 +35,18 @@ def read_calib_file(filepath):
             try:
                 calib[key] = np.array([float(x) for x in value.split()])
             except ValueError:
-                pass # Skip lines like 'calib_time'
+                pass 
 
-    # Get R0_rect (3x3) and make it 4x4
     R0_rect = np.eye(4)
     R0_rect[:3, :3] = calib['R0_rect'].reshape(3, 3)
 
-    # Get Tr_velo_to_cam (3x4) and make it 4x4
     Tr_velo_to_cam = np.eye(4)
     Tr_velo_to_cam[:3, :4] = calib['Tr_velo_to_cam'].reshape(3, 4)
 
-    # Calculate the full transform
     T_full = R0_rect @ Tr_velo_to_cam
     return T_full
 
-# --- NEW: Helper function to read label file ---
+# --- Helper function to read label file ---
 def read_label_file(filepath):
     """
     Reads a KITTI label file and returns a list of
@@ -78,7 +76,6 @@ def read_label_file(filepath):
                 z = float(parts[13])
                 ry = float(parts[14])
             except (ValueError, IndexError):
-                print(f"Warning: Skipping malformed line in {filepath}: {line}")
                 continue
 
             # Create 3x3 rotation matrix (rotation around Y-axis)
@@ -89,16 +86,11 @@ def read_label_file(filepath):
             ])
 
             # KITTI (x,y,z) is bottom-center. O3D needs box center.
-            # (x, y, z) -> (x, y - h/2, z)
             center = [x, y - h / 2.0, z]
-            
-            # KITTI (w, h, l) maps to O3D (x-dim, y-dim, z-dim)
             extent = [w, h, l]
             
             obb = o3d.geometry.OrientedBoundingBox(center, R_y, extent)
-            
-            # Set color
-            color = CLASS_COLORS.get(obj_type, [1, 1, 1]) # Default to white
+            color = CLASS_COLORS.get(obj_type, [1, 1, 1]) 
             obb.color = color
             
             boxes.append(obb)
@@ -107,13 +99,12 @@ def read_label_file(filepath):
 
 class PlayerState:
     """Helper class to store the player's state"""
-    # --- NEW: Added 'label_files' and 'calib_transform' ---
     def __init__(self, scan_files, label_files, calib_transform, fps):
         self.is_paused = False
         self.scan_files = scan_files
-        self.label_files = label_files       # --- NEW ---
-        self.calib_transform = calib_transform # --- NEW ---
-        self.current_boxes = []              # --- NEW ---
+        self.label_files = label_files
+        self.calib_transform = calib_transform
+        self.current_boxes = []
         
         self.total_frames = len(scan_files)
         self.current_frame = 0
@@ -125,14 +116,15 @@ class PlayerState:
     def toggle_pause(self, vis):
         """Callback for SPACE key press"""
         self.is_paused = not self.is_paused
+        # Use \n to ensure we don't overwrite the previous status line weirdly
         if self.is_paused:
-            print(">> Playback Paused")
+            print("\n>> Playback Paused")
         else:
-            print(">> Playback Resumed")
-        return True # Keep the callback registered
+            print("\n>> Playback Resumed")
+        return True 
 
     def advance_frame(self, vis, pcd):
-        """Callback for animation ticks. This is our new 'loop'."""
+        """Callback for animation ticks."""
         
         vis.poll_events()
 
@@ -148,100 +140,79 @@ class PlayerState:
         self.last_frame_time = current_time
         
         try:
-            # --- NEW: Remove Old Boxes ---
+            # --- Remove Old Boxes ---
             for box in self.current_boxes:
                 vis.remove_geometry(box, reset_bounding_box=False)
             self.current_boxes.clear()
             
             # --- Load Scan ---
             scan_path = self.scan_files[self.current_frame]
-            points = np.fromfile(scan_path, dtype=np.float32).reshape(-1, 4)
             
-            # --- MODIFIED: Use Raw LiDAR Points ---
-            # We are now in LiDAR coordinates, so we don't transform the points.
-            
-            # --- OLD CODE TO REMOVE ---
-            # points_hom = np.hstack((points[:, :3], np.ones((points.shape[0], 1))))
-            # points_transformed = (self.calib_transform @ points_hom.T).T
-            # pcd.points = o3d.utility.Vector3dVector(points_transformed[:, :3])
-            
-            # --- NEW CODE ---
-            pcd.points = o3d.utility.Vector3dVector(points[:, :3])
-            # --------------------------------------------------
+            # --- NEW: Display Filename in Console (In-Place Update) ---
+            file_name = os.path.basename(scan_path)
+            status_msg = f"Playing Frame [{self.current_frame+1}/{self.total_frames}]: {file_name}"
+            # Use carriage return '\r' to overwrite the line instead of scrolling
+            print(f"\r{status_msg:<60}", end="", flush=True)
+            # ----------------------------------------------------------
 
+            points = np.fromfile(scan_path, dtype=np.float32).reshape(-1, 4)
+            pcd.points = o3d.utility.Vector3dVector(points[:, :3])
             pcd.paint_uniform_color([0.8, 0.8, 0.8])
-            vis.update_geometry(pcd) # Update the points
+            vis.update_geometry(pcd)
             
-            # --- MODIFIED: Load Labels and Transform to LiDAR Coords ---
+            # --- Load Labels and Transform to LiDAR Coords ---
             label_path = self.label_files[self.current_frame]
             if label_path is not None:
-                # read_label_file still returns boxes in CAMERA coordinates
                 camera_boxes = read_label_file(label_path)
                 
                 # Get the INVERSE transform (Camera -> LiDAR)
                 T_lidar_from_cam = np.linalg.inv(self.calib_transform)
-                
-                # Get just the rotation part (top-left 3x3)
                 R_lidar_from_cam = T_lidar_from_cam[:3, :3]
 
-                # Transform each box and add it to the scene
                 self.current_boxes = []
                 for cam_box in camera_boxes:
-                    
-                    # --- START NEW LOGIC ---
-                    # 1. Transform the center point
-                    #    (Convert to homogeneous, apply 4x4, convert back)
+                    # Transform logic
                     cam_center_hom = np.append(cam_box.center, 1)
                     lidar_center_hom = T_lidar_from_cam @ cam_center_hom
                     lidar_center = lidar_center_hom[:3]
-
-                    # 2. Transform the rotation matrix
-                    #    (Apply the 3x3 rotation part of the transform)
                     lidar_R = R_lidar_from_cam @ cam_box.R
-
-                    # 3. Extent (size) stays the same
                     lidar_extent = cam_box.extent
 
-                    # 4. Create the new box in LiDAR coordinates
                     lidar_box = o3d.geometry.OrientedBoundingBox(lidar_center, 
                                                                   lidar_R, 
                                                                   lidar_extent)
-                    # --- END NEW LOGIC ---
-
-                    lidar_box.color = cam_box.color # Re-apply color
+                    lidar_box.color = cam_box.color 
                     
                     self.current_boxes.append(lidar_box)
                     vis.add_geometry(lidar_box, reset_bounding_box=False)
+
             # --- Advance frame index ---
             self.current_frame += 1
             if self.current_frame >= self.total_frames:
-                print("End of sequence. Looping.")
+                print("\nEnd of sequence. Looping.")
                 self.current_frame = 0
                 
         except Exception as e:
-            print(f"Error in animation callback: {e}")
-            traceback.print_exc() # Print full error
-            return False # Stop animation on error
+            print(f"\nError in animation callback: {e}")
+            traceback.print_exc() 
+            return False 
 
         vis.update_renderer()
-        return True # Tell Open3D to keep running
+        return True
 
 
 def play_sequence(sequence_dir, fps):
     """
     Plays a LiDAR sequence from a directory.
-    Assumes 'velodyne', 'label_2', and 'calib.txt'.
     """
-    
     scan_dir = os.path.join(sequence_dir, 'velodyne')
-    label_dir = os.path.join(sequence_dir, 'label_2')   # --- NEW ---
-    calib_file = os.path.join(sequence_dir, 'calib.txt') # --- NEW ---
+    label_dir = os.path.join(sequence_dir, 'label_2')
+    calib_file = os.path.join(sequence_dir, 'calib.txt')
     
     if not os.path.exists(scan_dir):
         print(f"Error: Velodyne directory not found: {scan_dir}")
         return
 
-    # --- NEW: Check for labels and calibration ---
     load_labels = True
     if not os.path.exists(label_dir):
         print(f"Warning: Label directory not found: {label_dir}. Will not display bounding boxes.")
@@ -249,55 +220,46 @@ def play_sequence(sequence_dir, fps):
     
     if not os.path.exists(calib_file):
         print(f"Error: Calibration file not found: {calib_file}.")
-        print("This file is required to align point clouds and labels.")
         return
     
     print(f"Loading calibration from {calib_file}")
     calib_transform = read_calib_file(calib_file)
-    # ---------------------------------------------
 
     scan_files = sorted(glob.glob(os.path.join(scan_dir, '*.bin')))
     if not scan_files:
         print(f"Error: No .bin files found in {scan_dir}")
         return
 
-    # --- NEW: Generate corresponding label file paths ---
     if load_labels:
         label_files = [
             os.path.join(label_dir, f"{os.path.splitext(os.path.basename(f))[0]}.txt") 
             for f in scan_files
         ]
-        print(f"Found {len(scan_files)} scans and {len(label_files)} corresponding label files.")
     else:
-        label_files = [None] * len(scan_files) # Pass a list of Nones
-    # ----------------------------------------------------
+        label_files = [None] * len(scan_files)
     
-    # --- NEW: Pass new args to state ---
     state = PlayerState(scan_files, label_files, calib_transform, fps=fps)
 
     vis = o3d.visualization.VisualizerWithKeyCallback()
     vis.create_window(window_name='LiDAR Sequence Player (Press SPACE to pause)')
     
-    vis.register_key_callback(32, state.toggle_pause) # 32 = SPACE
+    vis.register_key_callback(32, state.toggle_pause) 
     
     opt = vis.get_render_option()
     opt.background_color = np.asarray([0, 0, 0])
+    opt.point_size = 2.0
     
-    # --- Create Geometries ---
-    # --- NEW: Must transform the *first* frame too! ---
     first_frame_points_raw = np.fromfile(scan_files[0], dtype=np.float32).reshape(-1, 4)
-    
     pcd = o3d.geometry.PointCloud()
-
+    pcd.points = o3d.utility.Vector3dVector(first_frame_points_raw[:, :3])
     pcd.paint_uniform_color([0.8, 0.8, 0.8])
-    # ----------------------------------------------------
     
-    mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=10, origin=[0, 0, 0])
+    mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2, origin=[0, 0, 0])
     
     vis.add_geometry(pcd)
     vis.add_geometry(mesh_frame)
     
-    # --- Try to load the camera view ---
+    # --- Camera Setup ---
     ctr = vis.get_view_control()
     viewpoint_path = os.path.join(SCRIPT_DIR, 'viewpoint.json')
     
@@ -307,28 +269,29 @@ def play_sequence(sequence_dir, fps):
             ctr.convert_from_pinhole_camera_parameters(param)
             print(f"Successfully loaded camera view from {viewpoint_path}")
         except Exception as e:
-            print(f"Warning: Could not load '{viewpoint_path}'. Using fallback view. Error: {e}")
-            ctr.set_front([0, -1, 0.2]); ctr.set_lookat([0, 0, 0]); ctr.set_up([0, 0, 1]); ctr.set_zoom(0.1)
+            print(f"Warning: Could not load viewpoint. {e}")
+            ctr.set_front([-1, 0, -0.3])
+            ctr.set_lookat([20, 0, 0])
+            ctr.set_up([0, 0, 1])
+            ctr.set_zoom(0.05)
     else:
-        print(f"Warning: 'viewpoint.json' not found. Using fallback view.")
-        # --- NEW: Adjusted fallback view to be better for KITTI camera coords ---
-        # Look from behind the camera (positive Z) towards the origin
-        ctr.set_front([-1, 0, -0.3]); # Look from behind (neg-X) and slightly above
-        ctr.set_lookat([20, 0, 0]);   # Look at a point 20m ahead (pos-X)
-        ctr.set_up([0, 0, 1]);      # Z-axis is "up"
+        # Fallback view
+        ctr.set_front([-1, 0, -0.3])
+        ctr.set_lookat([20, 0, 0])
+        ctr.set_up([0, 0, 1])
         ctr.set_zoom(0.05)
 
-    # --- Register the animation callback ---
     vis.register_animation_callback(lambda vis: state.advance_frame(vis, pcd))
 
-    print(f"Starting visualization at {fps} FPS. Close the window to exit.")
+    print(f"Starting visualization at {fps} FPS.")
+    print("Check this terminal window for the current filename.")
+    print("-" * 60)
     
     try:
         vis.run() 
     finally:
         vis.destroy_window()
-        print("Playback finished or window closed.")
-
+        print("\nPlayback finished.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Play a LiDAR sequence with 3D Bounding Boxes.')
