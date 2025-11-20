@@ -5,7 +5,7 @@ import glob
 import argparse
 import time
 import traceback
-import sys  # --- NEW: For flushing console output ---
+import sys 
 
 # --- Get the absolute path of this script ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -99,7 +99,8 @@ def read_label_file(filepath):
 
 class PlayerState:
     """Helper class to store the player's state"""
-    def __init__(self, scan_files, label_files, calib_transform, fps):
+    # --- NEW: Added start_frame argument ---
+    def __init__(self, scan_files, label_files, calib_transform, fps, start_frame=0):
         self.is_paused = False
         self.scan_files = scan_files
         self.label_files = label_files
@@ -107,7 +108,15 @@ class PlayerState:
         self.current_boxes = []
         
         self.total_frames = len(scan_files)
-        self.current_frame = 0
+        
+        # --- NEW: Validate and set start frame ---
+        if start_frame < 0 or start_frame >= self.total_frames:
+            print(f"Warning: Start frame {start_frame} is out of bounds (0-{self.total_frames-1}). Resetting to 0.")
+            self.current_frame = 0
+        else:
+            self.current_frame = start_frame
+            print(f"Starting playback at frame {self.current_frame}")
+        # -----------------------------------------
         
         self.fps = fps
         self.frame_duration = 1.0 / self.fps
@@ -116,7 +125,6 @@ class PlayerState:
     def toggle_pause(self, vis):
         """Callback for SPACE key press"""
         self.is_paused = not self.is_paused
-        # Use \n to ensure we don't overwrite the previous status line weirdly
         if self.is_paused:
             print("\n>> Playback Paused")
         else:
@@ -148,12 +156,10 @@ class PlayerState:
             # --- Load Scan ---
             scan_path = self.scan_files[self.current_frame]
             
-            # --- NEW: Display Filename in Console (In-Place Update) ---
+            # --- Display Filename in Console ---
             file_name = os.path.basename(scan_path)
             status_msg = f"Playing Frame [{self.current_frame+1}/{self.total_frames}]: {file_name}"
-            # Use carriage return '\r' to overwrite the line instead of scrolling
             print(f"\r{status_msg:<60}", end="", flush=True)
-            # ----------------------------------------------------------
 
             points = np.fromfile(scan_path, dtype=np.float32).reshape(-1, 4)
             pcd.points = o3d.utility.Vector3dVector(points[:, :3])
@@ -201,7 +207,7 @@ class PlayerState:
         return True
 
 
-def play_sequence(sequence_dir, fps):
+def play_sequence(sequence_dir, fps, start_frame):
     """
     Plays a LiDAR sequence from a directory.
     """
@@ -238,7 +244,8 @@ def play_sequence(sequence_dir, fps):
     else:
         label_files = [None] * len(scan_files)
     
-    state = PlayerState(scan_files, label_files, calib_transform, fps=fps)
+    # --- NEW: Pass start_frame to State ---
+    state = PlayerState(scan_files, label_files, calib_transform, fps=fps, start_frame=start_frame)
 
     vis = o3d.visualization.VisualizerWithKeyCallback()
     vis.create_window(window_name='LiDAR Sequence Player (Press SPACE to pause)')
@@ -249,10 +256,15 @@ def play_sequence(sequence_dir, fps):
     opt.background_color = np.asarray([0, 0, 0])
     opt.point_size = 2.0
     
-    first_frame_points_raw = np.fromfile(scan_files[0], dtype=np.float32).reshape(-1, 4)
+    # --- NEW: Load the specific start_frame initially ---
+    # Use state.current_frame because the class might have reset it to 0 if it was out of bounds
+    initial_scan_file = scan_files[state.current_frame]
+    first_frame_points_raw = np.fromfile(initial_scan_file, dtype=np.float32).reshape(-1, 4)
+    
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(first_frame_points_raw[:, :3])
     pcd.paint_uniform_color([0.8, 0.8, 0.8])
+    # ----------------------------------------------------
     
     mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2, origin=[0, 0, 0])
     
@@ -275,7 +287,6 @@ def play_sequence(sequence_dir, fps):
             ctr.set_up([0, 0, 1])
             ctr.set_zoom(0.05)
     else:
-        # Fallback view
         ctr.set_front([-1, 0, -0.3])
         ctr.set_lookat([20, 0, 0])
         ctr.set_up([0, 0, 1])
@@ -303,6 +314,11 @@ if __name__ == "__main__":
                         type=int,
                         default=10,
                         help='Playback frames per second (default: 10)')
+    # --- NEW ARGUMENT ---
+    parser.add_argument('--start_frame',
+                        type=int,
+                        default=0,
+                        help='Frame index to start playback from (default: 0)')
     
     args = parser.parse_args()
-    play_sequence(args.seq_dir, args.fps)
+    play_sequence(args.seq_dir, args.fps, args.start_frame)
