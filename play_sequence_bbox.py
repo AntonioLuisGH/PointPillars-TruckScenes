@@ -14,7 +14,7 @@ CLASS_COLORS = {
     'Car': [0, 1, 0],           # Green
     'Pedestrian': [1, 0, 0],    # Red
     'Cyclist': [0, 1, 1],       # Cyan
-    'Drone': [1, 1, 0],           # Yellow
+    'Drone': [1, 1, 0],         # Yellow
     'DontCare': [1, 1, 1],      # White
 }
 
@@ -157,22 +157,61 @@ class PlayerState:
             scan_path = self.scan_files[self.current_frame]
             points = np.fromfile(scan_path, dtype=np.float32).reshape(-1, 4)
             
-            # --- NEW: Transform Points to Camera Coords ---
-            points_hom = np.hstack((points[:, :3], np.ones((points.shape[0], 1))))
-            points_transformed = (self.calib_transform @ points_hom.T).T
+            # --- MODIFIED: Use Raw LiDAR Points ---
+            # We are now in LiDAR coordinates, so we don't transform the points.
             
-            # Update PointCloud geometry
-            pcd.points = o3d.utility.Vector3dVector(points_transformed[:, :3])
+            # --- OLD CODE TO REMOVE ---
+            # points_hom = np.hstack((points[:, :3], np.ones((points.shape[0], 1))))
+            # points_transformed = (self.calib_transform @ points_hom.T).T
+            # pcd.points = o3d.utility.Vector3dVector(points_transformed[:, :3])
+            
+            # --- NEW CODE ---
+            pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+            # --------------------------------------------------
+
             pcd.paint_uniform_color([0.8, 0.8, 0.8])
             vis.update_geometry(pcd) # Update the points
             
-            # --- NEW: Load Labels and Add New Boxes ---
+            # --- MODIFIED: Load Labels and Transform to LiDAR Coords ---
             label_path = self.label_files[self.current_frame]
             if label_path is not None:
-                self.current_boxes = read_label_file(label_path)
-                for box in self.current_boxes:
-                    vis.add_geometry(box, reset_bounding_box=False)
+                # read_label_file still returns boxes in CAMERA coordinates
+                camera_boxes = read_label_file(label_path)
+                
+                # Get the INVERSE transform (Camera -> LiDAR)
+                T_lidar_from_cam = np.linalg.inv(self.calib_transform)
+                
+                # Get just the rotation part (top-left 3x3)
+                R_lidar_from_cam = T_lidar_from_cam[:3, :3]
 
+                # Transform each box and add it to the scene
+                self.current_boxes = []
+                for cam_box in camera_boxes:
+                    
+                    # --- START NEW LOGIC ---
+                    # 1. Transform the center point
+                    #    (Convert to homogeneous, apply 4x4, convert back)
+                    cam_center_hom = np.append(cam_box.center, 1)
+                    lidar_center_hom = T_lidar_from_cam @ cam_center_hom
+                    lidar_center = lidar_center_hom[:3]
+
+                    # 2. Transform the rotation matrix
+                    #    (Apply the 3x3 rotation part of the transform)
+                    lidar_R = R_lidar_from_cam @ cam_box.R
+
+                    # 3. Extent (size) stays the same
+                    lidar_extent = cam_box.extent
+
+                    # 4. Create the new box in LiDAR coordinates
+                    lidar_box = o3d.geometry.OrientedBoundingBox(lidar_center, 
+                                                                  lidar_R, 
+                                                                  lidar_extent)
+                    # --- END NEW LOGIC ---
+
+                    lidar_box.color = cam_box.color # Re-apply color
+                    
+                    self.current_boxes.append(lidar_box)
+                    vis.add_geometry(lidar_box, reset_bounding_box=False)
             # --- Advance frame index ---
             self.current_frame += 1
             if self.current_frame >= self.total_frames:
@@ -247,11 +286,9 @@ def play_sequence(sequence_dir, fps):
     # --- Create Geometries ---
     # --- NEW: Must transform the *first* frame too! ---
     first_frame_points_raw = np.fromfile(scan_files[0], dtype=np.float32).reshape(-1, 4)
-    points_hom = np.hstack((first_frame_points_raw[:, :3], np.ones((first_frame_points_raw.shape[0], 1))))
-    points_transformed = (calib_transform @ points_hom.T).T
     
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points_transformed[:, :3])
+
     pcd.paint_uniform_color([0.8, 0.8, 0.8])
     # ----------------------------------------------------
     
@@ -276,9 +313,9 @@ def play_sequence(sequence_dir, fps):
         print(f"Warning: 'viewpoint.json' not found. Using fallback view.")
         # --- NEW: Adjusted fallback view to be better for KITTI camera coords ---
         # Look from behind the camera (positive Z) towards the origin
-        ctr.set_front([0, -0.5, -1]); # Look "down" and "into" the scene
-        ctr.set_lookat([0, 0, 20]);   # Look at a point 20m ahead
-        ctr.set_up([0, -1, 0]);      # "Up" in camera coords is negative Y
+        ctr.set_front([-1, 0, -0.3]); # Look from behind (neg-X) and slightly above
+        ctr.set_lookat([20, 0, 0]);   # Look at a point 20m ahead (pos-X)
+        ctr.set_up([0, 0, 1]);      # Z-axis is "up"
         ctr.set_zoom(0.05)
 
     # --- Register the animation callback ---
